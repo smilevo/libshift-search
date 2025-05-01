@@ -1,0 +1,28 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pandas = "*"
+numpy = "*"
+seaborn = "*"
+matplotlib = "*"
+transformers = "*"
+torch = "*"
+python-dotenv = "*"
+pyarrow = "*"
+flake8 = "*"
+black = "*"
+astor = "*"
+dask = "*"
+
+[dev-packages]
+sqlalchemy = {extras = ["asyncio"], version = "*"}
+asyncpg = "*"
+python-dotenv = "*"
+psycopg2 = "*"
+ipykernel = "*"
+
+[requires]
+python_version = "3.11"

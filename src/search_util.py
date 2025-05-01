@@ -1,20 +1,49 @@
+"""
+Module for searching semantic similarity between code embeddings using Sentence Transformers.
+
+This code is provided strictly for research evaluation purposes only.
+Redistribution, modification, or sharing of this code is prohibited.
+All rights reserved by the author.
+
+Author: anushkrishnav (GitHub)
+Name: Anush Krishna V
+Created: 1 May 2025
+"""
+
 import os
 import pickle
 import numpy as np
 import pandas as pd
 import torch
 from sentence_transformers import util
+from typing import Optional, Dict, List, Tuple, Any
 
 
 class SearchUtils:
+    """
+    Utility class for searching and ranking similar code snippets based on vector embeddings.
+
+    Supports cosine, dot product, and Euclidean distance as similarity metrics.
+    """
+
     def __init__(
         self,
-        removed_embeddings: torch.Tensor = None,
-        snapshot_embeddings: dict = None,
-        val_df: pd.DataFrame = None,
+        removed_embeddings: Optional[torch.Tensor] = None,
+        snapshot_embeddings: Optional[Dict] = None,
+        val_df: Optional[pd.DataFrame] = None,
         mode: str = "cosine",
-        search_metadata: dict = None,
+        search_metadata: Optional[Dict] = None,
     ) -> None:
+        """
+        Initialize the search utility with precomputed embeddings and metadata.
+
+        Args:
+            removed_embeddings (torch.Tensor): Embeddings of removed code.
+            snapshot_embeddings (dict): Embeddings of code snapshots.
+            val_df (pd.DataFrame): DataFrame for ground truth validation.
+            mode (str): Similarity metric: 'cosine', 'dot', or 'euclidean'.
+            search_metadata (dict): Metadata including model name, column, and library info.
+        """
         self.removed_embeddings = removed_embeddings
         self.snapshot_embeddings = snapshot_embeddings
         self.val_df = val_df
@@ -27,26 +56,24 @@ class SearchUtils:
         self.lib = None
         self.__set_similarity_info(search_metadata)
 
-    def __set_similarity_info(self, data):
+    def __set_similarity_info(self, data: Dict[str, str]) -> None:
         """
-        Set the similarity info
+        Set model and search context metadata.
+
         Args:
-            data (DataFrame): DataFrame containing the embeddings
+            data (dict): Dictionary with 'model_name', 'column', and 'lib'.
         """
         self.model_name = data["model_name"]
         self.column = data["column"]
         self.lib = data["lib"]
 
-    def __search_embeddings(
-        self,
-    ) -> list:
+    def __search_embeddings(self) -> np.ndarray:
         """
-        Search for the top k libraries using cosine similarity
-        Returns:
-            list: Similarity scores
-        """
+        Compute similarity scores between the query and target embeddings.
 
-        # Calculate cosine similarity
+        Returns:
+            np.ndarray: Similarity or distance scores.
+        """
         if self.mode == "cosine":
             similarities = util.cos_sim(self.query_embedding, self.target_embeddings)
         elif self.mode == "dot":
@@ -57,71 +84,76 @@ class SearchUtils:
             )
         else:
             raise ValueError("Invalid mode. Choose from 'cosine', 'dot', 'euclidean'")
-        # Convert to numpy array
-        similarities = similarities.cpu().numpy()
-        return similarities
 
-    def __get_topk(self, k: int) -> list:
+        return similarities.cpu().numpy()
+
+    def __get_topk(self, k: int) -> Tuple[List[int], List[float]]:
         """
-        Get the top k methods
+        Get the top-k most similar methods from the similarity scores.
+
         Args:
-            scores (np.ndarray): Similarity scores
-            k (int): Top k methods to be returned
+            k (int): Number of top results to return.
+
         Returns:
-            list: Top k methods
+            Tuple[List[int], List[float]]: Indices and scores of the top-k items.
         """
-        # Get the top k methods
         if isinstance(self.scores, np.ndarray):
-            # convert to tensor
             self.scores = torch.tensor(self.scores)
         top_results = torch.topk(self.scores, k=k, dim=1)
-        top_indices = top_results.indices.flatten().tolist()
-        top_scores = top_results.values.flatten().tolist()
-        return top_indices, top_scores
+        return (
+            top_results.indices.flatten().tolist(),
+            top_results.values.flatten().tolist(),
+        )
 
     def store_similarity(
-        self,
-        data,
-        col,
-        k: int = 100,
+        self, data: List[Dict[str, Any]], col: str, k: int = 100
     ) -> None:
         """
-        Store the similarity scores as a parquet file
+        Store similarity search results to a compressed pickle file.
+
         Args:
-            similarity (np.ndarray): Similarity scores
+            data (list): List of similarity result dictionaries.
+            col (str): Column name associated with the search.
+            k (int): Top-k value used in the search.
         """
         head_path = "data/similarity/"
-        if not os.path.exists(head_path):
-            os.makedirs(head_path, exist_ok=True)
+        os.makedirs(head_path, exist_ok=True)
+
         model_name = self.model_name.replace("/", "_")
-        path = head_path + f"{model_name}_{self.lib}_{col}_{k}_{self.mode}_sim.pkl"
-        # Check if the directory exists
+        path = os.path.join(
+            head_path, f"{model_name}_{self.lib}_{col}_{k}_{self.mode}_sim.pkl"
+        )
+
         if not os.path.exists(path):
             os.makedirs(os.path.dirname(path), exist_ok=True)
-        # compress and store the dictionary
-        with open(f"{path}.pkl", "wb") as f:
+
+        with open(path, "wb") as f:
             pickle.dump(data, f)
 
-    def search(self, k=10):
+    def search(self, k: int = 10) -> List[Dict[str, Any]]:
         """
-        Search for the top k libraries using cosine similarity
-        Returns:
-            list: Similarity scores
-        """
-        # Calculate cosine similarity
+        Perform a similarity search between removed and snapshot embeddings.
 
+        If previously computed results are available, they are loaded from disk.
+
+        Args:
+            k (int): Number of top similar results to return per query.
+
+        Returns:
+            List[dict]: List of search results with verification info.
+        """
         removed_idx_count = len(self.removed_embeddings[1])
-        scores = []
         col = self.column
         model_name = self.model_name.replace("/", "_")
-        path = f"../data/similarity/{model_name}_{self.lib}_{col}_{k}_{self.mode}_sim.pkl"
-        # Check if the directory exists
-        if os.path.exists(path):
-            # read the similarity scores
-            with open(path, "rb") as f:
-                scores = pickle.load(f)
-            return scores
+        path = (
+            f"../data/similarity/{model_name}_{self.lib}_{col}_{k}_{self.mode}_sim.pkl"
+        )
 
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                return pickle.load(f)
+
+        scores = []
         for i in range(removed_idx_count):
             lib = self.removed_embeddings[2]
             removed_id = self.removed_embeddings[1][i]
@@ -129,21 +161,29 @@ class SearchUtils:
             snapshot_ids = self.snapshot_embeddings[1]
             self.target_embeddings = self.snapshot_embeddings[0]
             self.scores = self.__search_embeddings()
-            val_snapshot_ids = self.val_df[self.val_df['removed_method_id'] == removed_id]['snapshot_id'].values
+
+            val_snapshot_ids = self.val_df[
+                self.val_df["removed_method_id"] == removed_id
+            ]["snapshot_id"].values
+
             top_indices, top_scores = self.__get_topk(k=k)
+            top_ids = [snapshot_ids[i] for i in top_indices]
+
             for val_snapshot_id in val_snapshot_ids:
-                top_ids = [snapshot_ids[i] for i in top_indices]
-                scores.append( {
-                    "top_indices": top_indices,
-                    "top_scores": top_scores,
-                    "removed_id": removed_id,
-                    "library_name": lib,
-                    "target_id": val_snapshot_id,
-                    "top_ids": top_ids,
-                    "verified": val_snapshot_id in top_ids,
-                    "column": col,
-                    "model_name": model_name,
-                    "unique_id" : f"{lib}_{removed_id}_{val_snapshot_id}",
-                })
+                scores.append(
+                    {
+                        "top_indices": top_indices,
+                        "top_scores": top_scores,
+                        "removed_id": removed_id,
+                        "library_name": lib,
+                        "target_id": val_snapshot_id,
+                        "top_ids": top_ids,
+                        "verified": val_snapshot_id in top_ids,
+                        "column": col,
+                        "model_name": model_name,
+                        "unique_id": f"{lib}_{removed_id}_{val_snapshot_id}",
+                    }
+                )
+
         self.store_similarity(scores, col, k=k)
         return scores

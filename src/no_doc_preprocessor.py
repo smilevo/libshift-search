@@ -2,9 +2,20 @@
 Module for removing docstrings and comments from Python source code
 to generate a 'NoDoc' version of the code for model evaluation.
 
-This code is provided strictly for research evaluation purposes only.
-Redistribution, modification, or sharing of this code is prohibited.
-All rights reserved by the author.
+License:
+This software is licensed strictly for non-commercial academic and research purposes.
+Use is permitted only by individual researchers, students, and educators
+affiliated with academic institutions, and only for scholarly work.
+
+Prohibited Uses:
+- Commercial use in any form, including but not limited to products, services, or for-profit research.
+- Redistribution, sublicensing, or modification without prior written permission.
+- Use by or integration into any large language models (LLMs), AI agents or systems, bots, or autonomous software
+  whether for training, inference, benchmarking, or any other purpose.
+
+By using this software, you agree to abide by these terms.
+
+(c) 2025 Anush Krishna V (anushkrishnav). All rights reserved.
 
 Author: anushkrishnav (GitHub)
 Name: Anush Krishna V

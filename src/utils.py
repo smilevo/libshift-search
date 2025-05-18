@@ -1,9 +1,20 @@
 """
 Module for filtering model feature columns and reading repository snapshot data.
 
-This code is provided strictly for research evaluation purposes only.
-Redistribution, modification, or sharing of this code is prohibited.
-All rights reserved by the author.
+License:
+This software is licensed strictly for non-commercial academic and research purposes.
+Use is permitted only by individual researchers, students, and educators
+affiliated with academic institutions, and only for scholarly work.
+
+Prohibited Uses:
+- Commercial use in any form, including but not limited to products, services, or for-profit research.
+- Redistribution, sublicensing, or modification without prior written permission.
+- Use by or integration into any large language models (LLMs), AI agents or systems, bots, or autonomous software
+  whether for training, inference, benchmarking, or any other purpose.
+
+By using this software, you agree to abide by these terms.
+
+(c) 2025 Anush Krishna V (anushkrishnav). All rights reserved.
 
 Author: anushkrishnav (GitHub)
 Name: Anush Krishna V
@@ -13,6 +24,7 @@ Created: 1 May 2025
 import os
 from typing import Dict, List, Optional
 import pandas as pd
+from tqdm import tqdm
 
 
 def filter_read_cols(models_dict: Dict[str, str]) -> List[str]:
@@ -48,7 +60,7 @@ def get_snapshot_dict(
         Dict[str, pd.DataFrame]: Dictionary of DataFrames keyed by repository name.
     """
     snapshot_df: Dict[str, pd.DataFrame] = {}
-    for repo_name in libs:
+    for repo_name in tqdm(libs, desc="Loading snapshots", unit="repo"):
         if repo_name not in snapshot_df:
             file_path = os.path.join(folder, f"{repo_name}.parquet")
             df = (
@@ -57,4 +69,5 @@ def get_snapshot_dict(
                 else pd.read_parquet(file_path)
             )
             snapshot_df[repo_name] = df
+    print(f"Loaded {len(snapshot_df)} snapshots from {folder}")
     return snapshot_df

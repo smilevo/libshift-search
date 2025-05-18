@@ -1,9 +1,33 @@
+"""
+Module for searching top-k API replacements using sentence-transformer embeddings
+across removed and snapshot library versions. Supports multiple feature models.
+
+License:
+This software is licensed strictly for non-commercial academic and research purposes.
+Use is permitted only by individual researchers, students, and educators
+affiliated with academic institutions, and only for scholarly work.
+
+Prohibited Uses:
+- Commercial use in any form, including but not limited to products, services, or for-profit research.
+- Redistribution, sublicensing, or modification without prior written permission.
+- Use by or integration into any large language models (LLMs), AI agents or systems, bots, or autonomous software
+  whether for training, inference, benchmarking, or any other purpose.
+
+By using this software, you agree to abide by these terms.
+
+(c) 2025 Anush Krishna V (anushkrishnav). All rights reserved.
+
+Author: anushkrishnav (GitHub)
+Name: Anush Krishna V
+Created: 1 May 2025
+"""
+
+from collections import defaultdict
 import pandas as pd
 from pandas import DataFrame
 import torch
 import numpy as np
-from collections import defaultdict
-
+from typing import List, Dict, Tuple, Any
 from src.search_util import SearchUtils
 
 
@@ -15,51 +39,55 @@ class LibshiftSearch:
 
     def __init__(
         self,
-        model_dict,
+        model_dict: Any,
         removed_df: DataFrame,
         validation_df: DataFrame = None,
-        snapshot_dictionary: dict = None,
-        top_k: int = 10,
-        features: list = None,
+        snapshot_dictionary: Dict[str, DataFrame] = None,
+        top_ks: list = [],
+        features: List[str] = None,
+        db_handler: Any = None,
+
     ) -> None:
         """
+        Initialize the LibshiftSearch class.
+
         Args:
-            model_name (str): Sentence transformer model name
-            removed_df (DataFrame): Dataframe containing the removed libraries
-                format: {id, name, args, library_name, path, code, docstring, feature_model_embedding}
-            validation_df (DataFrame): Dataframe containing the validation libraries
-                format : {Removed_Method, New_Method, removed_version, snapshot_versionm library_name, snapshot_id, removed_method_id}
-            top_k (int): Top k libraries to be returned
+            model_dict (str | list | dict): Model name(s) or mapping per feature.
+            removed_df (DataFrame): DataFrame of removed API methods.
+            validation_df (DataFrame): Ground-truth mapping from removed to snapshot methods.
+            snapshot_dictionary (dict): Dictionary mapping library name to snapshot DataFrame.
+            top_k (int): Number of top matches to return.
+            features (list): List of feature types to evaluate (e.g., ["name", "code"]).
         """
 
         self.removed_df = removed_df
-        self.libraries = None
         self.validation_df = validation_df
         self.snapshot_dictionary = snapshot_dictionary
-        self.top_k = top_k
-        self.features = features
+        self.top_ks = top_ks
+        self.features = features or []
         self.removed_embeddings = defaultdict(dict)
         self.snapshot_embeddings = defaultdict(dict)
-        self.libraries = None
+        self.libraries = set()
         self.model_dict = {}
+        self.db_handler = db_handler
+
         self.__set_removed_df_lib()
         self.__infer_libraries()
         self.__set_models(model_dict)
         self.__set_embeddings()
 
+
+
     def __set_removed_df_lib(self):
-        # from val_df set the removed_df library name
-        # create a empty column in removed_df
+        """Assign library name in `removed_df` based on `validation_df`."""
         self.removed_df["library_name"] = None
         if self.validation_df is not None:
             # id of removed_df is same as removed_method_id in val_df
-            for idx, row in self.validation_df.iterrows():
-                removed_id = row["removed_method_id"]
-                library_name = row["library_name"]
-                # set the library name in removed_df
+            for _, row in self.validation_df.iterrows():
                 self.removed_df.loc[
-                    self.removed_df["id"] == removed_id, "library_name"
-                ] = library_name
+                    self.removed_df["id"] == row["removed_method_id"], "library_name"
+                ] = row["library_name"]
+
 
     def __set_models(self, models) -> bool:
         """
@@ -161,23 +189,44 @@ class LibshiftSearch:
         return ids[indices]
 
     def find_match(self):
+        """
+        Find the top k matches for each removed method in the validation dataframe
+        Args:
+            None
+
+        Returns:
+            search_data (dict): Dictionary of removed method id and the top k matches
+        """
         similarity_data = []
         search_data = defaultdict(dict)
-        for col, val in self.model_dict.items():
-            for lib in self.libraries:
-                search_metadata = {"model_name": val, "column": col, "lib": lib}
-                val_df = self.validation_df[self.validation_df["library_name"] == lib]
-                removed_embeddings = self.removed_embeddings[lib][col]
-                snashot_embeddings = self.snapshot_embeddings[lib][col]
-                su = SearchUtils(
+        
+        for lib in self.libraries:
+            val_df = self.validation_df[self.validation_df["library_name"] == lib]
+            removed_embeddings = self.removed_embeddings[lib]
+            snashot_embeddings = self.snapshot_embeddings[lib]
+            su = SearchUtils(
                     removed_embeddings=removed_embeddings,
                     snapshot_embeddings=snashot_embeddings,
                     val_df=val_df,
                     mode=self.mode,
-                    search_metadata=search_metadata,
+                    db_handler=self.db_handler,
                 )
-                similarity = su.search(k=self.top_k)
+            for col, val in self.model_dict.items():        
+                su.set_similarity_info({"model_name": val, "column": col, "lib": lib})
+                similarity = su.search(topk=self.top_ks, column=col)
                 similarity_data.extend(similarity)
+            
+            ## weighted search
+            weighted_schema = {
+                'name': 0.25,
+                'nodoc': 0.75,
+            }
+            su.set_similarity_info({"model_name": "weighted", "column": "name_nodoc", "lib": lib})
+            similarity = su.weighted_search(
+                topk=self.top_ks,
+                weighted_schema=weighted_schema,
+            )
+            similarity_data.extend(similarity)
 
         # go over every dict in similarity_data and make search data dict such that removed_id is the key and the value is a list of dicts
         for data in similarity_data:
@@ -187,73 +236,110 @@ class LibshiftSearch:
             search_data[unique_id].append(data)
         return search_data
 
+    def compute_combined_hits(self, match_df):
+        """
+        Compute the combined hits for the top-k matches
+        Args:
+            match_df (DataFrame): DataFrame of matches
+        Returns:
+            combined_hits (DataFrame): DataFrame of combined hits
+        """
+
+        combined_hits = []
+
+        for k_val in self.top_ks:
+            # Filter for current k
+            df_k = match_df[match_df["k"] == k_val]
+
+            # Consider only name, code, docstring model types
+            df_k = df_k[df_k["model_type"].isin(["name", "code", "docstring"])]
+
+            # Group by removed_id
+            grouped = df_k.groupby("removed_id")
+
+            correct_replacements = 0
+
+            for _, group in grouped:
+                if group["verified"].any():
+                    correct_replacements += 1
+
+            combined_hits.append({"Combined Top-k": k_val, "Correct Replacements": correct_replacements})
+        
+        return pd.DataFrame(combined_hits)
+
     def prepare_results(self, search_data: dict):
         """
         Prepare the results for the search experiment
+        Args:
+            search_data (dict): Dictionary of removed method id and the top k matches
+        Returns:
+            match_df (DataFrame): DataFrame of matches
+            agg_df (DataFrame): DataFrame of aggregated results
+            match_rows (list): List of dictionaries of matches
+            combined_hits_df (DataFrame): DataFrame of combined hits
         """
-        match_data = []
+        match_rows = []
+        libwise_data = []
+        topks = self.top_ks
+        model_types = self.features
 
-        match_json = []
-        model_types = ["name", "code", "docstring", "nodoc"]
-        for id, data in search_data.items():
-            entry = {
-                "removed_id": data[0]["removed_id"],
-                "library_name": data[0]["library_name"],
-            }
+        for _, data_list in search_data.items():
+            for model_data in data_list:
+                match_rows.append({
+                    "removed_id": model_data["removed_id"],
+                    "library_name": model_data["library_name"],
+                    "model_type": model_data["column"],
+                    "model_name": model_data["model_name"],
+                    "k": model_data["k"],
+                    "verified": model_data["verified"],
+                })
 
-            entry_json = {
-                "removed_id": data[0]["removed_id"],
-                "library_name": data[0]["library_name"],
-                "removed_method_name": self.removed_df[
-                    self.removed_df["id"] == data[0]["removed_id"]
-                ]["name"].values[0],
-            }
+        match_df = pd.DataFrame(match_rows)
 
-            for i, model_type in enumerate(model_types):
-                model_data = data[i]
-                entry[f"{model_type}_model"] = model_data["model_name"]
-                entry[f"{model_type}_indices"] = model_data["top_indices"]
-                entry[f"{model_type}_scores"] = model_data["top_scores"]
-                entry[f"{model_type}_verified"] = model_data["verified"]
+        # Initialize rows for each k
+        agg_rows = []
+        for k_val in topks:
+            row = {"k": k_val, "total_methods": self.validation_df.shape[0]}
 
-                entry_json["feature"] = model_type
-                entry_json["model_name"] = model_data["model_name"]
-                entry_json["top_indices"] = model_data["top_indices"]
-                entry_json["top_scores"] = model_data["top_scores"]
-                entry_json["has_match"] = model_data["verified"]
-                entry_json["snapshot_ids"] = self._get_snapshot_id_from_indices(
-                    model_data["top_indices"], model_data["library_name"]
-                )
-            match_data.append(entry)
-            match_json.append(entry_json)
+            # Get one model name per type (assuming consistent models per run)
+            for model_type in model_types:
+                filtered = match_df[(match_df["model_type"] == model_type) & (match_df["k"] == k_val)]
+                model_name = filtered["model_name"].unique()
+                row[f"{model_type}_model"] = model_name[0] if len(model_name) > 0 else None
+                row[f"{model_type}_hits"] = filtered["verified"].sum()
+            
+            # For the weighted model
+            filtered = match_df[(match_df["model_type"] == "name_nodoc") & (match_df["k"] == k_val)]
+            row["wnodoc_hits"] = filtered["verified"].sum()
 
-        # create dataframe from collected match data
-        search_data = pd.DataFrame(match_data)
+            agg_rows.append(row)
+        
+        columns = ['name_model', 'code_model', 'docstring_model','nodoc_model', 'k', 'name_hits', 'code_hits', 'docstring_hits', 'nodoc_hits', 'wnodoc_hits', 'total_methods']
+        agg_df = pd.DataFrame(agg_rows, columns=columns)
+        combined_hits_df = self.compute_combined_hits(match_df)
 
-        # aggregate results
-        agg_data = {
-            f"{model_type}_model": search_data[f"{model_type}_model"].unique()[0]
-            for model_type in model_types
-        }
-        agg_data.update(
-            {
-                f"total_{model_type}_hits": search_data[f"{model_type}_verified"].sum()
-                for model_type in model_types
-            }
-        )
-        agg_data["total_methods"] = len(search_data)
+        return match_df, agg_df, match_rows, combined_hits_df  # match_rows acts as match_json
 
-        agg_df = pd.DataFrame([agg_data])
 
-        return search_data, agg_df, match_json
+    def controller(self, mode: str = "cosine"):
+        """
+        Controller function to manage the search process and prepare results.
 
-    def format_matches(self):
-        pass
-
-    def controller(self, mode: str = "cosine", topk: int = 10):
-        self.top_k = topk
+        Args:
+            mode (str): The similarity mode to use for searching. Default is "cosine".
+            Options include "cosine", "cosine-soft", "dot", "angular", "euclidean".
+        Returns:
+            search_data (dict): Dictionary of removed method id and the top k matches
+            agg_df (DataFrame): DataFrame of aggregated results
+            match_json (list): List of dictionaries of matches
+            combined_hits_df (DataFrame): DataFrame of combined hits
+        """
         self.mode = mode
         search_data = self.find_match()
-        search_data, agg_data, match_json = self.prepare_results(search_data)
+        # dump search data to json
+        text_data =  str(search_data)
+        with open("output/search_data.txt", "w") as f:
+            f.write(text_data)
+        search_data, agg_data, match_json, combined_hits_df = self.prepare_results(search_data)
 
-        return search_data, agg_data, match_json
+        return search_data, agg_data, match_json, combined_hits_df

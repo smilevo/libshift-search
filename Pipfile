@@ -10,12 +10,12 @@ seaborn = "*"
 matplotlib = "*"
 transformers = "*"
 torch = "*"
-python-dotenv = "*"
 pyarrow = "*"
 flake8 = "*"
 black = "*"
 astor = "*"
 dask = "*"
+python-dotenv = "*"
 
 [dev-packages]
 sqlalchemy = {extras = ["asyncio"], version = "*"}

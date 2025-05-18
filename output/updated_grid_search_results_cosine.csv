@@ -1,0 +1,7 @@
+name_model,code_model,docstring_model,nodoc_model,k,name_hits,code_hits,docstring_hits,nodoc_hits,wnodoc_hits,total_methods
+ibm-granite/granite-embedding-125m-english,avsolatorio/GIST-large-Embedding-v0,ibm-granite/granite-embedding-125m-english,w601sxs/b1ade-embed,1,5,22,22,15,14,96
+ibm-granite/granite-embedding-125m-english,avsolatorio/GIST-large-Embedding-v0,ibm-granite/granite-embedding-125m-english,w601sxs/b1ade-embed,3,26,53,41,43,45,96
+ibm-granite/granite-embedding-125m-english,avsolatorio/GIST-large-Embedding-v0,ibm-granite/granite-embedding-125m-english,w601sxs/b1ade-embed,5,39,65,51,52,51,96
+ibm-granite/granite-embedding-125m-english,avsolatorio/GIST-large-Embedding-v0,ibm-granite/granite-embedding-125m-english,w601sxs/b1ade-embed,7,43,70,51,60,62,96
+ibm-granite/granite-embedding-125m-english,avsolatorio/GIST-large-Embedding-v0,ibm-granite/granite-embedding-125m-english,w601sxs/b1ade-embed,10,49,78,62,69,71,96
+ibm-granite/granite-embedding-125m-english,avsolatorio/GIST-large-Embedding-v0,ibm-granite/granite-embedding-125m-english,w601sxs/b1ade-embed,15,55,85,65,74,78,96

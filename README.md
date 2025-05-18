@@ -1,4 +1,4 @@
-# libshift-search
+# LibShift Search: A Similarity-Driven Model for Mapping Deprecated Python API Methods to Current Alternatives
 
 ![LibShift Search](images/search-logo.png)
 

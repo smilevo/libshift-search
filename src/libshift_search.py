@@ -203,10 +203,10 @@ class LibshiftSearch:
         for lib in self.libraries:
             val_df = self.validation_df[self.validation_df["library_name"] == lib]
             removed_embeddings = self.removed_embeddings[lib]
-            snashot_embeddings = self.snapshot_embeddings[lib]
+            snapshot_embeddings = self.snapshot_embeddings[lib]
             su = SearchUtils(
                     removed_embeddings=removed_embeddings,
-                    snapshot_embeddings=snashot_embeddings,
+                    snapshot_embeddings=snapshot_embeddings,
                     val_df=val_df,
                     mode=self.mode,
                     db_handler=self.db_handler,
